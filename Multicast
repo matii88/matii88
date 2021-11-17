@@ -1,0 +1,90 @@
+ wt., 06/02/2018 - 13:23  Michał Żyra
+mcrecv - opis i zastosowanie
+Standardowo na sondach diagnostycznych i obrazie ISO z narzędziami znajduje się program mcrecv służący do podstawowej diagnostyki transmisji mulitcastowej. Za pomocą tego programu można:
+
+Sprawdzić, czy na podanej grupie multicastowej odbywa się transmisja danych
+Sprawdzić, czy na podanej grupie multicastowej występują błędy ciągłości strumienia
+Plik jest również do pobrania z adresu: https://portal.sgtsa.pl/download/mcrecv
+
+Obowiązkowym parametrem jest adres i port grupy multicastowej (aktualna lista znajduje się w wykazie grup multicastowych) w formacie adres_ip:port. Sposób używania ilustrują poniższe przykłady:
+
+Niezalecany sposób używania:
+mcrecv 239.239.2.1:1234
+Spowoduje to wypisanie na konsolę surowej zawartości strumienia, czyli całej serii krzaków. W przypadku wolnych terminali przerwanie pracy programu za pomocą Ctrl-C może nie być możliwe.
+Zalecany sposób używania:
+mcrecv [opcje] 239.239.2.1:1234 /dev/null
+Spowoduje to przekierowanie strumienia do /dev/null, przy czym interesujące informacje zostaną wyświetlone na stderr.
+Opcja -i - informacje o pakietach:
+W przypadku otrzymanego pakietu pojawi się każdorazowo informacja Timestamp: 0.821965 Diff: 0.003937 Sender: 10.200.200.200:1234 Size:1316
+Jeżeli powyższe wpisy się nie pojawią, oznacza to brak transmisji na podanej grupie multicastowej
+Opcja -c - informacje o ciągłości strumienia:
+W przypadku braku ciągłości strumienia (spowodowanego głównie utratą pakietów, lecz także możliwym uszkodzeniem samego strumienia) pojawią się wpisy o treści Countinuity error on pid 213 (got 13, expected 12)
+Obecność tych wpisów (zwłaszcza, jeśli są różne wartości pid-ów) powoduje nieprawidłowe wyświetlanie kanału u abonentów.
+Jeżeli powyższe wpisy się nie pojawią, a transmisja występuje, oznacza to prawidłowy odbiór strumienia w miejscu podłączenia sondy.
+Opcja -t [czas w sekundach] - ograniczenie pracy programu:
+Program zakończy swoją pracę po zadanym czasie
+Podobne narzędzia diagnostyczne
+mcfirst z pakietu ssmping
+http://www.venaas.no/multicast/ssmping/ - programy z tego pakietu dzialaja i pod windows i pod linuxem.
+W pakiecie jest programik mcfirst:
+
+$ mcfirst
+mcfirst version 0.9 (20060613)
+Usage:
+mcfirst [ -46vr ] [ -I interface ] [ -c count ] [ -t time ] [source] group port
+or
+mcfirst [ -46vr ] [ -I interface ] [ -c count ] [ -t time ] group [source] port
+$ mcfirst 239.239.0.1 1234
+mcfirst joined (*,G) = (*,239.239.0.1)
+Received 216 bytes from 10.200.200.26 after 61.146 ms (ttl/hops 32)
+216 bytes (payload) and 1 packets received in 0 seconds
+ 
+
+Zastosowanie mcrecv w skrypcie
+(Autorem tekstu jest Przemysław Knycz)
+
+Napisałem prosty skrypt, które sobie z powodzeniem śmiga na sondach. Być może się to przyda do zdiagnozowania, gdzie jest problem związany ze znikaniem portalu na Zyxel HD.
+
+mccheck.sh
+
+#!/bin/sh
+# Version: 0.2
+# Przemyslaw Stanislaw Knycz
+# pknycz@kolnet.eu
+# GNU GPL
+#
+# katalog logow
+KATALOG=/var/log/mccheck
+# jak dlugo trzymac logi
+DNI=7
+# czas testowania grupy w sekundach
+TIMEOUT="5"
+# lista adresow do sprawdzenia
+LISTA="239.239.0.33:12345 239.239.0.34:1235 239.239.0.35:1235 239.239.0.36:1235 239.239.0.37:1235 239.239.0.38:1235 239.239.0.39:1235 239.239.0.40:1235 239.239.0.41:1235 239.239.0.42:1235"
+> /tmp/licznik
+data=`date +%Y%m%d-%H%M`
+for i in $LISTA; do
+        /root/mcrecv -i $i -t $TIMEOUT > /dev/null 2> /tmp/licznik;
+        echo "$i"-`cat /tmp/licznik | wc -l` >> $KATALOG/log-$data
+done
+
+#czyscimy logi
+cd $KATALOG/
+rm -f log-`date  +%Y%m%d "-d" "-$DNI days"`*
+ 
+
+Żeby skrypt działał prawidłowo umieszczamy go w katalogu /usr/local/bin/, należy stworzyć katalog /var/log/mccheck oraz wyedytować plik /etc/crontab:
+
+*/5 * * * * root        /usr/local/bin/mccheck.sh
+Logi lądują jako log-RokMiesiacDzien-GodzinaMinuta i pokazują ile jest odebranych pakietów dla danej grupy multicastowej - przykładowy wynik:
+
+239.239.0.33:12345-2
+239.239.0.34:1235-280
+239.239.0.35:1235-307
+239.239.0.36:1235-306
+239.239.0.37:1235-304
+239.239.0.38:1235-268
+239.239.0.39:1235-28
+239.239.0.40:1235-1
+239.239.0.41:1235-122
+239.239.0.42:1235-241
